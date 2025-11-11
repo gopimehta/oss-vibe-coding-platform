@@ -1,10 +1,11 @@
 import type { UIMessageStreamWriter, UIMessage } from "ai";
 import type { DataPart } from "../messages/data-parts";
-import { E2BService } from "@/lib/e2b-service";
 import { getRichError } from "./get-rich-error";
 import { tool } from "ai";
 import description from "./run-command.md";
 import z from "zod/v3";
+import { tasks, runs } from "@trigger.dev/sdk/v3";
+import type { runCommandTask } from "@/trigger/sandbox";
 
 interface Params {
   writer: UIMessageStreamWriter<UIMessage<never, DataPart>>;
@@ -39,148 +40,132 @@ export const runCommand = ({ writer }: Params) =>
         ),
     }),
     execute: async (
-      { sandboxId, command, sudo, wait, args = [] },
+      { sandboxId, command, sudo, wait, args },
       { toolCallId }
     ) => {
+      const normalizedArgs = Array.isArray(args) ? args : (args ? [String(args)] : []);
+      
       writer.write({
         id: toolCallId,
         type: "data-run-command",
-        data: { sandboxId, command, args, status: "executing" },
-      });
-
-      const service = E2BService.getInstance();
-
-      try {
-        await service.getSandbox(sandboxId);
-      } catch (error) {
-        const richError = getRichError({
-          action: "get sandbox by id",
-          args: { sandboxId },
-          error,
-        });
-
-        writer.write({
-          id: toolCallId,
-          type: "data-run-command",
-          data: {
-            sandboxId,
-            command,
-            args,
-            error: richError.error,
-            status: "error",
-          },
-        });
-
-        return richError.message;
-      }
-
-      let cmd: {
-        cmdId: string;
-        exitCode?: number;
-        stdout?: string;
-        stderr?: string;
-      } | null = null;
-
-      try {
-        cmd = await service.runCommand(sandboxId, command, args, {
-          sudo,
-          wait,
-        });
-      } catch (error) {
-        const richError = getRichError({
-          action: "run command in sandbox",
-          args: { sandboxId },
-          error,
-        });
-
-        writer.write({
-          id: toolCallId,
-          type: "data-run-command",
-          data: {
-            sandboxId,
-            command,
-            args,
-            error: richError.error,
-            status: "error",
-          },
-        });
-
-        return richError.message;
-      }
-
-      writer.write({
-        id: toolCallId,
-        type: "data-run-command",
-        data: {
-          sandboxId,
-          commandId: cmd.cmdId,
-          command,
-          args,
-          status: "executing",
-        },
-      });
-
-      if (!wait) {
-        writer.write({
-          id: toolCallId,
-          type: "data-run-command",
-          data: {
-            sandboxId,
-            commandId: cmd.cmdId,
-            command,
-            args,
-            status: "running",
-          },
-        });
-
-        return `The command \`${command} ${args.join(
-          " "
-        )}\` has been started in the background in the sandbox with ID \`${sandboxId}\` with the commandId ${
-          cmd.cmdId
-        }.`;
-      }
-
-      writer.write({
-        id: toolCallId,
-        type: "data-run-command",
-        data: {
-          sandboxId,
-          commandId: cmd.cmdId,
-          command,
-          args,
-          status: "waiting",
-        },
+        data: { sandboxId, command, args: normalizedArgs, status: "executing" },
       });
 
       try {
+        const handle = await tasks.trigger<typeof runCommandTask>(
+          "run-command",
+          {
+            sandboxId,
+            command,
+            args: normalizedArgs,
+            sudo,
+            wait,
+          }
+        );
+
+        let run;
+        do {
+          run = await runs.retrieve(handle.id);
+          if (run.status === "COMPLETED") {
+            break;
+          } else if (run.status === "FAILED" || run.status === "CRASHED") {
+            throw new Error(run.error?.message || "Task failed");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } while (true);
+
+        if (!run.output) {
+          throw new Error("Task completed but no output returned");
+        }
+
+        const output = run.output as {
+          cmdId: string | null;
+          exitCode?: number;
+          stdout?: string;
+          stderr?: string;
+          error?: string;
+        };
+
+        if (output.error && !output.cmdId && !output.error.includes('exit status')) {
+          throw new Error(output.error);
+        }
+
+        if (!output.cmdId) {
+          throw new Error("Failed to start command - no command ID returned");
+        }
+
         writer.write({
           id: toolCallId,
           type: "data-run-command",
           data: {
             sandboxId,
-            commandId: cmd.cmdId,
+            commandId: output.cmdId,
             command,
-            args,
-            exitCode: cmd.exitCode ?? 0,
+            args: normalizedArgs,
+            status: "executing",
+          },
+        });
+
+        if (!wait) {
+          writer.write({
+            id: toolCallId,
+            type: "data-run-command",
+            data: {
+              sandboxId,
+              commandId: output.cmdId,
+              command,
+              args: normalizedArgs,
+              status: "running",
+            },
+          });
+
+          return `The command \`${command} ${normalizedArgs.join(
+            " "
+          )}\` has been started in the background in the sandbox with ID \`${sandboxId}\` with the commandId ${
+            output.cmdId
+          }.`;
+        }
+
+        writer.write({
+          id: toolCallId,
+          type: "data-run-command",
+          data: {
+            sandboxId,
+            commandId: output.cmdId,
+            command,
+            args: normalizedArgs,
+            status: "waiting",
+          },
+        });
+
+        writer.write({
+          id: toolCallId,
+          type: "data-run-command",
+          data: {
+            sandboxId,
+            commandId: output.cmdId,
+            command,
+            args: normalizedArgs,
+            exitCode: output.exitCode ?? 0,
             status: "done",
           },
         });
 
         return (
-          `The command \`${command} ${args.join(
+          `The command \`${command} ${normalizedArgs.join(
             " "
-          )}\` has finished with exit code ${cmd.exitCode ?? 0}.` +
-          (cmd.stdout
-            ? `\nStdout of the command was: \n\`\`\`\n${cmd.stdout}\n\`\`\`\n`
+          )}\` has finished with exit code ${output.exitCode ?? 0}.` +
+          (output.stdout
+            ? `\nStdout of the command was: \n\`\`\`\n${output.stdout}\n\`\`\`\n`
             : "") +
-          (cmd.stderr
-            ? `Stderr of the command was: \n\`\`\`\n${cmd.stderr}\n\`\`\``
+          (output.stderr
+            ? `Stderr of the command was: \n\`\`\`\n${output.stderr}\n\`\`\``
             : "")
         );
       } catch (error) {
         const richError = getRichError({
-          action: "wait for command to finish",
-          args: { sandboxId, commandId: cmd.cmdId },
+          action: "run command in sandbox",
+          args: { sandboxId, command, args: normalizedArgs },
           error,
         });
 
@@ -189,14 +174,14 @@ export const runCommand = ({ writer }: Params) =>
           type: "data-run-command",
           data: {
             sandboxId,
-            commandId: cmd.cmdId,
             command,
-            args,
+            args: normalizedArgs,
             error: richError.error,
             status: "error",
           },
         });
 
+        console.log("Error running command:", richError.error);
         return richError.message;
       }
     },

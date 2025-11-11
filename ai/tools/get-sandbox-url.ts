@@ -1,9 +1,11 @@
 import type { UIMessageStreamWriter, UIMessage } from "ai";
 import type { DataPart } from "../messages/data-parts";
-import { E2BService } from "@/lib/e2b-service";
+import { getRichError } from "./get-rich-error";
 import { tool } from "ai";
 import description from "./get-sandbox-url.md";
 import z from "zod/v3";
+import { tasks, runs } from "@trigger.dev/sdk/v3";
+import type { getSandboxURLTask } from "@/trigger/sandbox";
 
 interface Params {
   writer: UIMessageStreamWriter<UIMessage<never, DataPart>>;
@@ -31,15 +33,65 @@ export const getSandboxURL = ({ writer }: Params) =>
         data: { status: "loading" },
       });
 
-      const service = E2BService.getInstance();
-      const url = service.getSandboxURL(sandboxId, port);
+      try {
+        const handle = await tasks.trigger<typeof getSandboxURLTask>(
+          "get-sandbox-url",
+          {
+            sandboxId,
+            port,
+          }
+        );
 
-      writer.write({
-        id: toolCallId,
-        type: "data-get-sandbox-url",
-        data: { url, status: "done" },
-      });
+        let run;
+        do {
+          run = await runs.retrieve(handle.id);
+          if (run.status === "COMPLETED") {
+            break;
+          } else if (run.status === "FAILED" || run.status === "CRASHED") {
+            throw new Error(run.error?.message || "Task failed");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } while (true);
 
-      return { url };
+        if (!run.output) {
+          throw new Error("Task completed but no output returned");
+        }
+
+        const output = run.output as { url: string | null; error?: string };
+
+        if (output.error) {
+          throw new Error(output.error);
+        }
+
+        if (!output.url) {
+          throw new Error("Failed to get sandbox URL");
+        }
+
+        writer.write({
+          id: toolCallId,
+          type: "data-get-sandbox-url",
+          data: { url: output.url, status: "done" },
+        });
+
+        return { url: output.url };
+      } catch (error) {
+        const richError = getRichError({
+          action: "get sandbox URL",
+          args: { sandboxId, port },
+          error,
+        });
+
+        writer.write({
+          id: toolCallId,
+          type: "data-get-sandbox-url",
+          data: {
+            error: { message: richError.error.message },
+            status: "error",
+          },
+        });
+
+        console.log("Error getting sandbox URL:", richError.error);
+        return richError.message;
+      }
     },
   });

@@ -14,36 +14,51 @@ This project has been modified to use **Trigger.dev workflows** with **e2b sandb
 ### Current Implementation
 
 - Uses **e2b sandboxes** for secure, isolated code execution environments
-- Uses **Trigger.dev** for workflow orchestration and task management
+- Uses **Trigger.dev** for complete workflow orchestration and task management
+- All sandbox operations are orchestrated through Trigger.dev tasks
 - Maintains the same user-facing API and experience
+
+### Architecture Flow
+
+```
+User Input → AI Agent → AI Tools → Trigger.dev Tasks → E2B Service → e2b API
+                                         ↓
+                                   - Task Logging
+                                   - Error Handling
+                                   - Retry Logic
+                                   - Observability
+```
 
 ### Key Components
 
-1. **E2B Service** (`lib/e2b-service.ts`): Singleton service that manages e2b sandbox instances
+1. **Trigger.dev Workflows** (`trigger/sandbox.ts`): **Primary orchestration layer**
+
+   - `createSandboxTask`: Creates new e2b sandboxes with full logging and error handling
+   - `runCommandTask`: Executes commands in sandboxes with retry logic
+   - `writeFilesTask`: Writes files to sandboxes with batch processing
+   - `getSandboxURLTask`: Retrieves public URLs for sandbox services
+   - `getSandboxStatusTask`: Checks sandbox status
+   - **All tasks include:** comprehensive logging, error handling, run tracking, and observability
+
+2. **AI Tools** (`ai/tools/`): AI agent tools that trigger Trigger.dev workflows
+
+   - `create-sandbox.ts`: Triggers `createSandboxTask` for sandbox creation
+   - `run-command.ts`: Triggers `runCommandTask` for command execution
+   - `generate-files.ts`: Triggers `writeFilesTask` for file uploads
+   - `get-sandbox-url.ts`: Triggers `getSandboxURLTask` for URL generation
+   - **All tools use:** `tasks.trigger()` from `@trigger.dev/sdk/v3` to invoke workflows
+
+3. **E2B Service** (`lib/e2b-service.ts`): Low-level service for e2b sandbox operations
 
    - Creates and manages sandbox lifecycles
    - Handles command execution with real-time output
    - Manages file operations (read/write)
    - Provides sandbox URL generation for port forwarding
-
-2. **Trigger.dev Workflows** (`trigger/sandbox.ts`): Background tasks for sandbox operations
-
-   - `createSandboxTask`: Creates new e2b sandboxes
-   - `runCommandTask`: Executes commands in sandboxes
-   - `writeFilesTask`: Writes files to sandboxes
-   - `getSandboxURLTask`: Retrieves public URLs for sandbox services
-   - `getSandboxStatusTask`: Checks sandbox status
-
-3. **AI Tools** (`ai/tools/`): AI agent tools that interface with the sandbox
-
-   - `create-sandbox.ts`: Tool for creating new sandboxes
-   - `run-command.ts`: Tool for executing commands
-   - `generate-files.ts`: Tool for generating and uploading files
-   - `get-sandbox-url.ts`: Tool for getting public URLs
+   - **Called by:** Trigger.dev tasks (not directly by AI tools)
 
 4. **API Routes** (`app/api/sandboxes/`): REST endpoints for sandbox operations
    - Status checking
-   - Log streaming
+   - Log streaming (real-time command output)
    - File reading
 
 ## Getting Started
@@ -150,9 +165,16 @@ The application can be deployed to Vercel, or any other Next.js-compatible platf
 
 ### Why Both?
 
-- **e2b** handles the actual code execution and sandbox management (synchronous operations)
-- **Trigger.dev** handles workflow orchestration and background tasks (asynchronous operations)
-- This hybrid approach provides the best of both worlds: real-time UX with robust background processing
+- **e2b** handles the actual code execution and sandbox management at the lowest level
+- **Trigger.dev** orchestrates ALL sandbox operations, providing:
+  - Task execution with automatic retries (3 attempts by default)
+  - Comprehensive logging with run IDs for traceability
+  - Error handling with structured error responses
+  - Observability through the Trigger.dev dashboard
+  - Task history and monitoring
+  - Scalability for concurrent operations
+- **Integration approach:** AI tools → Trigger.dev tasks → E2B service → e2b API
+- This architecture ensures robust, observable, and maintainable code execution workflows
 
 ## Manual Setup Steps
 
@@ -175,12 +197,26 @@ The application can be deployed to Vercel, or any other Next.js-compatible platf
 4. **Deploy Workflows:**
    - Run `pnpm trigger:deploy` to deploy Trigger.dev workflows
 
+## Testing the Integration
+
+See [TESTING.md](./TESTING.md) for detailed instructions on how to verify that Trigger.dev is properly integrated and orchestrating all sandbox operations.
+
+Quick verification:
+1. Run `pnpm trigger:dev` in a separate terminal
+2. Use the application and watch the Trigger.dev console for task executions
+3. Each sandbox operation should trigger a corresponding Trigger.dev task
+4. Check the Trigger.dev dashboard for task history and logs
+
 ## Differences from Original
 
 - **Sandbox Provider**: Changed from Vercel Sandbox to e2b
-- **Workflow Management**: Added Trigger.dev for orchestration
-- **Service Layer**: Introduced `E2BService` singleton for sandbox management
-- **API Compatibility**: Maintained the same API surface for tools and routes
+- **Workflow Orchestration**: ALL operations now flow through Trigger.dev tasks
+  - Previously: AI Tools → Sandbox SDK (direct)
+  - Now: AI Tools → Trigger.dev Tasks → E2B Service → e2b API
+- **Observability**: Added comprehensive logging, error tracking, and task monitoring via Trigger.dev
+- **Reliability**: Added automatic retries, structured error handling, and task history
+- **Service Layer**: Introduced `E2BService` singleton for low-level sandbox management
+- **API Compatibility**: Maintained the same user-facing API and experience
 
 ## Learn More
 

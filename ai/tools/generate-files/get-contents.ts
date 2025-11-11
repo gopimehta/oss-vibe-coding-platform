@@ -35,7 +35,7 @@ export async function* getContents(
 ): AsyncGenerator<FileContentChunk> {
   const generated: z.infer<typeof fileSchema>[] = []
   const deferred = new Deferred<void>()
-  const result = streamObject({
+  const streamResult = streamObject({
     ...getModelOptions(params.modelId, { reasoningEffort: 'minimal' }),
     maxOutputTokens: 64000,
     system:
@@ -57,31 +57,34 @@ export async function* getContents(
     },
   })
 
-  for await (const items of result.partialObjectStream) {
+  for await (const items of streamResult.partialObjectStream) {
     if (!Array.isArray(items?.files)) {
       continue
     }
 
     const written = generated.map((file) => file.path)
+    const newFiles = items.files.slice(generated.length)
     const paths = written.concat(
-      items.files
-        .slice(generated.length, items.files.length - 1)
-        .flatMap((f) => (f?.path ? [f.path] : []))
+      newFiles.flatMap((f) => (f?.path ? [f.path] : []))
     )
+    const completeFiles = []
+    for (const f of newFiles) {
+      if (f && typeof f.path === 'string' && typeof f.content === 'string') {
+        completeFiles.push(fileSchema.parse(f))
+      } else {
+        break
+      }
+    }
 
-    const files = items.files
-      .slice(generated.length, items.files.length - 2)
-      .map((file) => fileSchema.parse(file))
-
-    if (files.length > 0) {
-      yield { files, paths, written }
-      generated.push(...files)
+    if (completeFiles.length > 0) {
+      yield { files: completeFiles, paths, written }
+      generated.push(...completeFiles)
     } else {
       yield { files: [], written, paths }
     }
   }
 
-  const raceResult = await Promise.race([result.object, deferred.promise])
+  const raceResult = await Promise.race([streamResult.object, deferred.promise])
   if (!raceResult) {
     throw new Error('Unexpected Error: Deferred was resolved before the result')
   }

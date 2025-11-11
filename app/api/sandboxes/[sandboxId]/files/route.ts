@@ -35,8 +35,15 @@ export async function GET(
       new ReadableStream({
         async pull(controller) {
           try {
-            for await (const chunk of stream) {
-              controller.enqueue(chunk);
+            const reader = stream.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } finally {
+              reader.releaseLock();
             }
           } catch (error) {
             console.error("Error reading file:", error);

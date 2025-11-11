@@ -8,12 +8,15 @@ export async function GET(
   const { sandboxId } = await params;
   try {
     const service = E2BService.getInstance();
-    await service.getSandbox(sandboxId);
-    await service.runCommand(sandboxId, "echo", ["Sandbox status check"], {
-      wait: true,
-    });
-    return NextResponse.json({ status: "running" });
+    const instance = await service.getSandbox(sandboxId);
+    
+    if (instance && instance.sandbox) {
+      return NextResponse.json({ status: "running" });
+    }
+    
+    return NextResponse.json({ status: "stopped" });
   } catch (error) {
+    console.error(`Error checking sandbox ${sandboxId}:`, error);
     return NextResponse.json({ status: "stopped" });
   }
 }

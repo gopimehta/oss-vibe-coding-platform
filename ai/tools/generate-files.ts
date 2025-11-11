@@ -49,7 +49,6 @@ export const generateFiles = ({ writer, modelId }: Params) =>
 
       const writeFiles = getWriteFiles({
         sandboxId,
-        service,
         toolCallId,
         writer,
       });

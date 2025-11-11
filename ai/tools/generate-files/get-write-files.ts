@@ -1,22 +1,17 @@
 import type { DataPart } from "../../messages/data-parts";
 import type { File } from "./get-contents";
-import type { E2BService } from "@/lib/e2b-service";
 import type { UIMessageStreamWriter, UIMessage } from "ai";
 import { getRichError } from "../get-rich-error";
+import { tasks, runs } from "@trigger.dev/sdk/v3";
+import type { writeFilesTask } from "@/trigger/sandbox";
 
 interface Params {
   sandboxId: string;
-  service: E2BService;
   toolCallId: string;
   writer: UIMessageStreamWriter<UIMessage<never, DataPart>>;
 }
 
-export function getWriteFiles({
-  sandboxId,
-  service,
-  toolCallId,
-  writer,
-}: Params) {
+export function getWriteFiles({ sandboxId, toolCallId, writer }: Params) {
   return async function writeFiles(params: {
     written: string[];
     files: File[];
@@ -30,14 +25,39 @@ export function getWriteFiles({
     });
 
     try {
-      await service.writeFiles(
-        sandboxId,
-        params.files.map((file) => ({
-          content: Buffer.from(file.content, "utf8"),
-          path: file.path,
-        }))
+      const handle = await tasks.trigger<typeof writeFilesTask>(
+        "write-files",
+        {
+          sandboxId,
+          files: params.files.map((file) => ({
+            path: file.path,
+            content: file.content,
+          })),
+        }
       );
+
+      let run;
+      do {
+        run = await runs.retrieve(handle.id);
+        if (run.status === "COMPLETED") {
+          break;
+        } else if (run.status === "FAILED" || run.status === "CRASHED") {
+          throw new Error(run.error?.message || "Task failed");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } while (true);
+
+      if (!run.output) {
+        throw new Error("Task completed but no output returned");
+      }
+
+      const output = run.output as { success: boolean; error?: string };
+
+      if (!output.success) {
+        throw new Error(output.error || "Failed to write files");
+      }
     } catch (error) {
+      
       const richError = getRichError({
         action: "write files to sandbox",
         args: params,

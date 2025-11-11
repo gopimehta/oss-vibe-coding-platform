@@ -1,10 +1,11 @@
 import type { UIMessageStreamWriter, UIMessage } from "ai";
 import type { DataPart } from "../messages/data-parts";
-import { E2BService } from "@/lib/e2b-service";
 import { getRichError } from "./get-rich-error";
 import { tool } from "ai";
 import description from "./create-sandbox.md";
 import z from "zod/v3";
+import { tasks, runs } from "@trigger.dev/sdk/v3";
+import type { createSandboxTask } from "@/trigger/sandbox";
 
 interface Params {
   writer: UIMessageStreamWriter<UIMessage<never, DataPart>>;
@@ -38,20 +39,43 @@ export const createSandbox = ({ writer }: Params) =>
       });
 
       try {
-        const service = E2BService.getInstance();
-        const instance = await service.createSandbox({
-          timeout: timeout ?? 600000,
-          ports,
-        });
+        const handle = await tasks.trigger<typeof createSandboxTask>(
+          "create-sandbox",
+          {
+            timeout: timeout ?? 600000,
+            ports,
+          }
+        );
+
+        let run;
+        do {
+          run = await runs.retrieve(handle.id);
+          if (run.status === "COMPLETED") {
+            break;
+          } else if (run.status === "FAILED" || run.status === "CRASHED") {
+            throw new Error(run.error?.message || "Task failed");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } while (true);
+
+        if (!run.output) {
+          throw new Error("Task completed but no output returned");
+        }
+
+        const output = run.output as {
+          sandboxId: string;
+          ports: number[];
+          timeout: number;
+        };
 
         writer.write({
           id: toolCallId,
           type: "data-create-sandbox",
-          data: { sandboxId: instance.sandboxId, status: "done" },
+          data: { sandboxId: output.sandboxId, status: "done" },
         });
 
         return (
-          `Sandbox created with ID: ${instance.sandboxId}.` +
+          `Sandbox created with ID: ${output.sandboxId}.` +
           `\nYou can now upload files, run commands, and access services on the exposed ports.`
         );
       } catch (error) {

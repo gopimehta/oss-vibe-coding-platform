@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { useSandboxStore } from '@/app/state'
 import { useEffect } from 'react'
+import * as React from 'react'
 import useSWR from 'swr'
 
 export function SandboxState() {
@@ -19,15 +20,15 @@ export function SandboxState() {
       <Dialog open>
         <DialogHeader className="sr-only">
           <DialogTitle className="sr-only">
-            Sandbox max. duration reached
+            Sandbox session ended
           </DialogTitle>
           <DialogDescription className="sr-only">
-            The Vercel Sandbox is already stopped. You can start a new session
+            The e2b Sandbox session has ended. You can start a new session
             by clicking the button below.
           </DialogDescription>
         </DialogHeader>
         <DialogContent>
-          Sandbox max. duration for this demo has been reached
+          Sandbox session has ended
           <Button onClick={() => window.location.reload()}>
             Start a new session
           </Button>
@@ -47,21 +48,36 @@ interface DirtyCheckerProps {
 }
 
 function DirtyChecker({ sandboxId, setStatus }: DirtyCheckerProps) {
-  const content = useSWR<'ok' | 'stopped'>(
-    `/api/sandboxes/${sandboxId}`,
+  const [shouldCheck, setShouldCheck] = React.useState(false)
+  
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setShouldCheck(true)
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [sandboxId])
+
+  const content = useSWR<'running' | 'stopped'>(
+    shouldCheck && sandboxId ? `/api/sandboxes/${sandboxId}` : null,
     async (pathname: string, init: RequestInit) => {
       const response = await fetch(pathname, init)
       const { status } = await response.json()
       return status
     },
-    { refreshInterval: 1000 }
+    { 
+      refreshInterval: 5000,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    }
   )
 
   useEffect(() => {
-    if (content.data === 'stopped') {
+    if (content.data === 'stopped' && !content.isLoading) {
       setStatus('stopped')
+    } else if (content.data === 'running') {
+      setStatus('running')
     }
-  }, [setStatus, content.data])
+  }, [setStatus, content.data, content.isLoading])
 
   return null
 }
