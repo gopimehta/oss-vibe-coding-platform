@@ -1,22 +1,16 @@
 # OSS Vibe Coding Platform
 
-This is a **demo** of an end-to-end coding platform where the user can enter text prompts, and the agent will create a full stack application.
+An end-to-end coding platform where users can enter text prompts, and the AI agent will create full-stack applications.
 
-This project has been modified to use **Trigger.dev workflows** with **e2b sandboxes** instead of Vercel Sandbox for code execution, while maintaining the same user experience as the original Vibe Code demo.
+**🌐 [Try the Live Demo](https://oss-vibe-coding-platform-six.vercel.app/)**
+
+This project uses **Trigger.dev workflows** with **e2b sandboxes** for secure code execution, replacing the original Vercel Sandbox implementation while maintaining the same user experience.
 
 ## Architecture
 
-### Original Implementation
+### Overview
 
-- Used **Vercel Sandbox** for secure code execution
-- Direct SDK integration for sandbox management
-
-### Current Implementation
-
-- Uses **e2b sandboxes** for secure, isolated code execution environments
-- Uses **Trigger.dev** for complete workflow orchestration and task management
-- All sandbox operations are orchestrated through Trigger.dev tasks
-- Maintains the same user-facing API and experience
+This platform combines the power of AI code generation with secure, isolated execution environments. The architecture is designed for reliability, observability, and scalability.
 
 ### Architecture Flow
 
@@ -28,6 +22,13 @@ User Input → AI Agent → AI Tools → Trigger.dev Tasks → E2B Service → e
                                    - Retry Logic
                                    - Observability
 ```
+
+### Current Implementation
+
+- **e2b sandboxes** for secure, isolated code execution
+- **Trigger.dev** for workflow orchestration and task management
+- All sandbox operations flow through Trigger.dev tasks
+- Maintains the same user-facing API as the original
 
 ### Key Components
 
@@ -61,14 +62,24 @@ User Input → AI Agent → AI Tools → Trigger.dev Tasks → E2B Service → e
    - Log streaming (real-time command output)
    - File reading
 
+## Features
+
+- 🤖 **AI-Powered Code Generation**: Generate full-stack applications from natural language prompts
+- 🏗️ **Full-Stack Support**: Create Next.js apps, Go servers, Python applications, and more
+- 🔒 **Secure Execution**: Code runs in isolated e2b sandboxes with full security
+- 📊 **Real-Time Logs**: Stream command output and monitor execution in real-time
+- 📁 **File Management**: Browse, read, and manage generated files through an intuitive file explorer
+- 🔄 **Workflow Orchestration**: Robust task management with automatic retries and error handling via Trigger.dev
+- 🌐 **Live Preview**: Preview your applications with automatic port forwarding
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 22.x (see `engines` in `package.json`)
-- pnpm 8.15.4+ (or npm/yarn/bun)
-- e2b account and API key ([Get one here](https://e2b.dev))
-- Trigger.dev account and API key ([Get one here](https://trigger.dev))
+- **Node.js 22.x** (see `engines` in `package.json`)
+- **pnpm 8.15.4+** (or npm/yarn/bun)
+- **e2b account** and API key ([Get one here](https://e2b.dev))
+- **Trigger.dev account** and API key ([Get one here](https://trigger.dev))
 
 ### Environment Variables
 
@@ -147,76 +158,31 @@ npm run trigger:deploy
 
 The application can be deployed to Vercel, or any other Next.js-compatible platform. Make sure to set all environment variables in your deployment platform.
 
+**📖 See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions**, including:
+
+- How to configure environment variables in both Vercel and Trigger.dev
+- Step-by-step deployment guide
+- Troubleshooting common issues
+
 ## Architecture Decisions
 
-### Why e2b?
+**e2b** provides secure, isolated sandbox environments with real-time output, port forwarding, and full filesystem access.
 
-- **Secure Execution**: e2b provides isolated, secure sandbox environments for code execution
-- **Real-time Output**: Supports streaming logs and real-time command output
-- **Port Forwarding**: Built-in support for exposing services running in sandboxes
-- **File System**: Full filesystem access for reading and writing files
+**Trigger.dev** orchestrates all sandbox operations with:
 
-### Why Trigger.dev?
+- Automatic retries (3 attempts by default)
+- Comprehensive logging and run tracking
+- Structured error handling
+- Full observability through dashboard
+- Scalability for concurrent operations
 
-- **Workflow Orchestration**: Manages complex, long-running operations
-- **Error Handling**: Built-in retry logic and error handling
-- **Observability**: Provides visibility into task execution and status
-- **Scalability**: Handles background tasks efficiently
+**Integration flow:** AI tools → Trigger.dev tasks → E2B service → e2b API
 
-### Why Both?
+This architecture ensures robust, observable, and maintainable code execution workflows.
 
-- **e2b** handles the actual code execution and sandbox management at the lowest level
-- **Trigger.dev** orchestrates ALL sandbox operations, providing:
-  - Task execution with automatic retries (3 attempts by default)
-  - Comprehensive logging with run IDs for traceability
-  - Error handling with structured error responses
-  - Observability through the Trigger.dev dashboard
-  - Task history and monitoring
-  - Scalability for concurrent operations
-- **Integration approach:** AI tools → Trigger.dev tasks → E2B service → e2b API
-- This architecture ensures robust, observable, and maintainable code execution workflows
+## Testing
 
-## Manual Setup Steps
-
-1. **Get API Keys:**
-
-   - Sign up for [e2b](https://e2b.dev) and get your API key
-   - Sign up for [Trigger.dev](https://trigger.dev) and get your API key
-
-2. **Configure Environment Variables:**
-
-   - Add `E2B_API_KEY` to `.env.local`
-   - Add `TRIGGER_SECRET_KEY` to `.env.local`
-   - Add `AI_GATEWAY_API_KEY` to `.env.local` (if using AI Gateway)
-
-3. **Initialize Trigger.dev:**
-
-   - Run `npx trigger.dev@latest init`
-   - Follow the prompts to authenticate and set up your project
-
-4. **Deploy Workflows:**
-   - Run `pnpm trigger:deploy` to deploy Trigger.dev workflows
-
-## Testing the Integration
-
-See [TESTING.md](./TESTING.md) for detailed instructions on how to verify that Trigger.dev is properly integrated and orchestrating all sandbox operations.
-
-Quick verification:
-1. Run `pnpm trigger:dev` in a separate terminal
-2. Use the application and watch the Trigger.dev console for task executions
-3. Each sandbox operation should trigger a corresponding Trigger.dev task
-4. Check the Trigger.dev dashboard for task history and logs
-
-## Differences from Original
-
-- **Sandbox Provider**: Changed from Vercel Sandbox to e2b
-- **Workflow Orchestration**: ALL operations now flow through Trigger.dev tasks
-  - Previously: AI Tools → Sandbox SDK (direct)
-  - Now: AI Tools → Trigger.dev Tasks → E2B Service → e2b API
-- **Observability**: Added comprehensive logging, error tracking, and task monitoring via Trigger.dev
-- **Reliability**: Added automatic retries, structured error handling, and task history
-- **Service Layer**: Introduced `E2BService` singleton for low-level sandbox management
-- **API Compatibility**: Maintained the same user-facing API and experience
+See [TESTING.md](./TESTING.md) for detailed verification instructions. Quick check: After starting both dev servers, create a sandbox and verify tasks appear in the [Trigger.dev dashboard](https://cloud.trigger.dev).
 
 ## Learn More
 
